@@ -640,6 +640,7 @@ set_motion_libinput (MsdMouseManager *manager,
                 long *l;
         } data;
         gfloat accel;
+        gfloat decel;
         gfloat motion_acceleration;
 
         float_type = property_from_name ("FLOAT");
@@ -676,11 +677,17 @@ set_motion_libinput (MsdMouseManager *manager,
          * mapped = (value - oldmin) * newrange / oldrange + oldmin
          */
 
-        if (motion_acceleration == -1.0) /* unset */
-                accel = 0.0;
-        else
+        if (motion_acceleration >= 1.0)
                 accel = (motion_acceleration - 1.0) * 2.0 / 9.0 - 1;
+        else /* unset or deceleration */
+                accel = 0.0;
 
+        if (motion_acceleration < -1.0)
+                decel = (motion_acceleration + 1.0) * -1;
+        else
+                decel = 0.0;
+
+        /* acceleration */
         gdk_x11_display_error_trap_push (display);
         rc = XGetDeviceProperty (GDK_DISPLAY_XDISPLAY (display),
                                  device, prop, 0, 1, False, float_type, &type, &format,
@@ -694,6 +701,24 @@ set_motion_libinput (MsdMouseManager *manager,
 
         if (rc == Success) {
                 XFree (data.c);
+        }
+
+        /* deceleration */
+        prop = property_from_name ("Device Accel Constant Deceleration");
+        if (prop) {
+                rc = XGetDeviceProperty (GDK_DISPLAY_XDISPLAY (display),
+                                         device, prop, 0, 1, False, float_type, &type, &format,
+                                         &nitems, &bytes_after, &data.c);
+
+                if (rc == Success && type == float_type && format == 32 && nitems >= 1) {
+                        *(float *) data.l = decel;
+                        XChangeDeviceProperty (GDK_DISPLAY_XDISPLAY (display),
+                                               device, prop, float_type, 32, PropModeReplace, data.c, nitems);
+                }
+
+                if (rc == Success) {
+                        XFree (data.c);
+                }
         }
 
         XCloseDevice (GDK_DISPLAY_XDISPLAY (display), device);
